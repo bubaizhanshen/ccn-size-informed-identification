@@ -7,36 +7,30 @@ an alternative chronological split test sensitivity to eligibility and split.
 """
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
 for key in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[key] = str(WORK)
 import argparse
-import hashlib
+
 import json
 import numpy as np
 import pandas as pd
-import preprocessing_complete_cohort as builder
-import diagnostic_size_fraction as previous
+from analysis.preprocessing import complete_cohort as builder
+from analysis.diagnostics import size_fraction as previous
 
 OUT = ROOT / "results/temporal_information"
 GRAPH = ROOT / "results/mapped"
 OLD = ROOT / "results/complete_cohort"
 LEADS = (1, 3, 6)
 SEED = 270927
-
-
-def digest(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(block)
-    return h.hexdigest()
 
 
 def read_site(site: str, leads: tuple[int, ...] = LEADS) -> dict:
@@ -59,9 +53,12 @@ def read_site(site: str, leads: tuple[int, ...] = LEADS) -> dict:
         if not audit.get(key):
             raise ValueError(f"{site}: required PNSD gate {key} failed")
     paths = builder.source_smps(site)
-    if {p.name: digest(p) for p in paths} != manifest["source_csv_sha256"]:
+    if {p.name: file_info(p) for p in paths} != manifest["source_csv_files"]:
         raise ValueError(f"{site}: input SMPS source changed")
-    if digest(GRAPH / f"{site}_mapped24_audit.json") != manifest["mapped_audit_sha256"]:
+    if (
+        file_info(GRAPH / f"{site}_mapped24_audit.json")
+        != manifest["mapped_audit_file"]
+    ):
         raise ValueError(f"{site}: mapped PNSD audit changed")
     frames, timestamps = ([], [])
     for path in paths:
@@ -192,8 +189,8 @@ def read_site(site: str, leads: tuple[int, ...] = LEADS) -> dict:
         mapped_bins=all_bins,
         mapped_valid=valid,
         raw_index=raw_index,
-        source_hashes=manifest["source_csv_sha256"],
-        mapped_audit_sha256=manifest["mapped_audit_sha256"],
+        source_files=manifest["source_csv_files"],
+        mapped_audit_file=manifest["mapped_audit_file"],
         conservation=[float(q05), float(q50), float(q95)],
     )
 
@@ -420,8 +417,8 @@ def site_analysis(
         site=site,
         status="passed",
         leads_h=LEADS,
-        source_hashes=d["source_hashes"],
-        mapped_audit_sha256=d["mapped_audit_sha256"],
+        source_files=d["source_files"],
+        mapped_audit_file=d["mapped_audit_file"],
         mapped_total_over_frozen_q05_median_q95=d["conservation"],
         frozen_test_boundary=str(cut),
         complete_3h_hours=int(d["complete3"].sum()),

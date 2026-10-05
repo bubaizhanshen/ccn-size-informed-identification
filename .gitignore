@@ -4,6 +4,10 @@ data/
 results/
 cache/
 .venv/
+.pytest_cache/
+.DS_Store
+.idea/
+.vscode/
 __pycache__/
 *.py[cod]
 *.csv

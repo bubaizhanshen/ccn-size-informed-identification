@@ -6,28 +6,22 @@ and valid spectra/targets, but never filters on that relationship.
 """
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 import argparse
-import hashlib
+
 import json
 import re
 from pathlib import Path
 import numpy as np
 import pandas as pd
-import shared_ccn_archive as ccn
-from runtime import ROOT
+from analysis.common import ccn_archive as ccn
+from analysis.common.runtime import ROOT
 
 GRAPH = ROOT / "results/mapped"
 OUT = ROOT / "results/complete_cohort"
 SOURCE = ROOT / "inputs/figshare_27913806/selected"
 SITES = ("ANX", "COR", "ENA", "GUC", "MAO", "MOS", "SBS_CP", "SBS_SPL", "SGP")
-
-
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def qc_ok(q: pd.Series) -> pd.Series:
@@ -118,8 +112,8 @@ def prepare(
     if not audit.get("preprocessing_gate_passed"):
         raise ValueError(f"{site}: mapped 24-bin audit failed")
     paths = source_smps(site)
-    if {path.name: sha256(path) for path in paths} != prior["source_csv_sha256"]:
-        raise ValueError(f"{site}: source SMPS hash changed")
+    if {path.name: file_info(path) for path in paths} != prior["source_csv_files"]:
+        raise ValueError(f"{site}: source SMPS file changed")
     with np.load(GRAPH / f"{site}_mapped24.npz") as mapped:
         bins = mapped["pnsd_bin_number_concentration"].astype(np.float32)
         valid = mapped["valid_hour"].astype(bool)
@@ -234,8 +228,8 @@ def prepare(
         "cohort": "instrument-only; no CCN--N80 closure filter",
         "qc": "current/future CCN CPC instrument flag and current SMPS CPC flag missing or zero; finite nonnegative CCN; complete mapped current/future PNSD; same future SMPS flag policy as graph cohort",
         "new_preflight_passed": True,
-        "source_csv_sha256": prior["source_csv_sha256"],
-        "mapped_audit_sha256": sha256(GRAPH / f"{site}_mapped24_audit.json"),
+        "source_csv_files": prior["source_csv_files"],
+        "mapped_audit_file": file_info(GRAPH / f"{site}_mapped24_audit.json"),
         "mapped_total_over_frozen_total_q05_median_q95": [
             float(q05),
             float(q50),

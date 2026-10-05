@@ -9,9 +9,9 @@ import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
-from runtime import ROOT, TEST_BOUNDARIES
-import shared_pnsd_preflight as pre
-import preprocessing_complete_cohort as cohort
+from analysis.common.runtime import ROOT, TEST_BOUNDARIES
+from analysis.common import pnsd as pre
+from analysis.preprocessing import complete_cohort as cohort
 
 
 def prepare_mapping(site):
@@ -42,7 +42,7 @@ def prepare_mapping(site):
         concentration_unit="particles cm-3 per log10 diameter",
         diameter_definition="midpoint_nm",
         semantics_evidence="Harmonized archive D_* metadata: dN/dlog10Dp; independent N_CN_SMPS_STP check",
-        source_sha256={p.name: cohort.sha256(p) for p in paths},
+        source_files={p.name: cohort.file_info(p) for p in paths},
         native_width_method="log-midpoint-inferred integration cells for density",
         representation_contract={
             "input_semantics": "dndlog10dp",
@@ -54,7 +54,7 @@ def prepare_mapping(site):
             "mapped_semantics": "bin_concentration",
             "target_range_nm": [15, 300],
             "target_channels": 24,
-            "instrument_metadata_source": "harmonized archive metadata and manuscript Table S1",
+            "instrument_metadata_source": "harmonized archive metadata",
         },
     )
     if not report["preprocessing_gate_passed"]:
@@ -75,7 +75,7 @@ def prepare_mapping(site):
     (dest / f"{site}_cohort_manifest.json").write_text(
         json.dumps(
             {
-                "source_csv_sha256": report["source_sha256"],
+                "source_csv_files": report["source_files"],
                 "first_test": TEST_BOUNDARIES[site],
             },
             indent=2,

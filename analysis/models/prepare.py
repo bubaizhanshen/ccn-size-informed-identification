@@ -1,10 +1,12 @@
 """Prepare a leakage-checked, common-cohort SGP six-hour CCN state dataset."""
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -12,23 +14,15 @@ for key in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[key] = str(WORK)
 for key in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[key] = "1"
-import hashlib
+
 import json
 import numpy as np
 import pandas as pd
-import shared_temporal as audited
+from analysis.diagnostics import temporal as audited
 
 OUT = ROOT / "results/model_benchmark"
 PREVIOUS = ROOT / "results/environmental_endpoints"
 PROTOCOL = Path(__file__)
-
-
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def main() -> None:
@@ -36,10 +30,10 @@ def main() -> None:
         raise FileNotFoundError(PROTOCOL)
     previous_manifest = json.loads((PREVIOUS / "manifest.json").read_text())
     d = audited.read_site("SGP", leads=(1, 3, 6))
-    if d["mapped_audit_sha256"] != previous_manifest["source_pnsd_audit_sha256"]:
+    if d["mapped_audit_file"] != previous_manifest["source_pnsd_audit_file"]:
         raise ValueError("PNSD preprocessing audit differs from prior endpoint")
-    if d["source_hashes"] != previous_manifest["source_smps_sha256"]:
-        raise ValueError("SMPS source hashes differ from prior endpoint")
+    if d["source_files"] != previous_manifest["source_smps_files"]:
+        raise ValueError("SMPS source files differ from prior endpoint")
     blocks_path = PREVIOUS / "sgp_six_hour_target_blocks.csv"
     thresholds_path = PREVIOUS / "sgp_fit_month_thresholds.csv"
     blocks = pd.read_csv(
@@ -154,13 +148,13 @@ def main() -> None:
         test=local["test"],
     )
     manifest = {
-        "analysis_code_sha256": sha256(PROTOCOL),
-        "prior_endpoint_manifest_sha256": sha256(PREVIOUS / "manifest.json"),
-        "prior_blocks_sha256": sha256(blocks_path),
-        "prior_thresholds_sha256": sha256(thresholds_path),
-        "pnsd_audit_sha256": d["mapped_audit_sha256"],
-        "smps_source_sha256": d["source_hashes"],
-        "common_cohort_sha256": sha256(target),
+        "analysis_code_file": file_info(PROTOCOL),
+        "prior_endpoint_manifest_file": file_info(PREVIOUS / "manifest.json"),
+        "prior_blocks_file": file_info(blocks_path),
+        "prior_thresholds_file": file_info(thresholds_path),
+        "pnsd_audit_file": d["mapped_audit_file"],
+        "smps_source_files": d["source_files"],
+        "cohort_file": file_info(target),
         "train_val_cut": str(inner_cut),
         "cal_cut": str(cal_cut),
         "outer_test_cut": str(outer),
@@ -186,7 +180,7 @@ def main() -> None:
         json.dumps(
             {
                 "partitions": manifest["partitions"],
-                "common_cohort_sha256": manifest["common_cohort_sha256"],
+                "cohort_file": manifest["cohort_file"],
             },
             indent=2,
         )

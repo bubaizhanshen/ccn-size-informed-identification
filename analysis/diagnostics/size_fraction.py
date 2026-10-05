@@ -1,12 +1,14 @@
-"""Test whether a literature-fixed >82 nm fraction captures CCN shape information.
+"""Test how the fraction above 82 nm captures CCN size information.
 
-Uses the already audited, label-complete nine-site graph cohort. This is an
+Uses the audited, label-complete nine-site cohort. This is an
 exploratory association/prediction analysis, not a causal effect estimator.
 """
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 import argparse
-import hashlib
+
 import json
 from pathlib import Path
 import numpy as np
@@ -15,7 +17,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from runtime import ROOT
+from analysis.common.runtime import ROOT
 
 AUDIT_SOURCE = ROOT / "results/mapped"
 SOURCE = ROOT / "results/complete_cohort"
@@ -23,14 +25,6 @@ OUT = ROOT / "results/complete_diagnostics"
 SITES = ("ANX", "COR", "ENA", "GUC", "MAO", "MOS", "SBS_CP", "SBS_SPL", "SGP")
 CUTOFFS_NM = (50.0, 65.0, 82.0, 100.0, 125.0, 150.0)
 SEED = 260926
-
-
-def sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def fraction_above(
@@ -282,9 +276,9 @@ def analyze_site(
             rows.to_csv(output / f"{site}_{task}_test_predictions.csv.gz", index=False)
     info = {
         "site": site,
-        "cohort_sha256": sha256(cohort_file),
-        "source_manifest_sha256": sha256(SOURCE / f"{site}_cohort_manifest.json"),
-        "mapped_audit_sha256": sha256(AUDIT_SOURCE / f"{site}_mapped24_audit.json"),
+        "cohort_file": file_info(cohort_file),
+        "source_manifest_file": file_info(SOURCE / f"{site}_cohort_manifest.json"),
+        "mapped_audit_file": file_info(AUDIT_SOURCE / f"{site}_mapped24_audit.json"),
         "mapped_over_native_median": audit["conservation_mapped_over_native"]["median"],
         "mapped_over_frozen_total_median": manifest[
             "mapped_total_over_frozen_total_q05_median_q95"

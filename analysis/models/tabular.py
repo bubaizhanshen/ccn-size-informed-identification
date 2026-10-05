@@ -1,10 +1,12 @@
 """Matched current/history tabular models for measured SGP high-CCN states."""
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -12,7 +14,7 @@ for key in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[key] = str(WORK)
 for key in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[key] = "1"
-import hashlib
+
 import json
 import numpy as np
 import pandas as pd
@@ -28,14 +30,6 @@ OUT = ROOT / "results/model_benchmark"
 SEED = 270927
 REPRESENTATIONS = ("N", "N82", "N_plus_f82", "full24")
 FAMILIES = ("logistic", "random_forest", "lightgbm", "xgboost")
-
-
-def digest(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def features(d: dict[str, np.ndarray], name: str, context: str) -> np.ndarray:
@@ -125,8 +119,8 @@ def fit_model(
 def main() -> None:
     dataset_path = OUT / "common_cohort.npz"
     manifest = json.loads((OUT / "common_cohort_manifest.json").read_text())
-    if digest(dataset_path) != manifest["common_cohort_sha256"]:
-        raise ValueError("common cohort hash mismatch")
+    if file_info(dataset_path) != manifest["cohort_file"]:
+        raise ValueError("common cohort file changed")
     with np.load(dataset_path, allow_pickle=False) as file:
         d = {key: file[key] for key in file.files}
     y = d["y"].astype(int)
@@ -222,8 +216,8 @@ def main() -> None:
     (OUT / "tabular_manifest.json").write_text(
         json.dumps(
             {
-                "dataset_sha256": manifest["common_cohort_sha256"],
-                "source_script_sha256": digest(Path(__file__)),
+                "dataset_file": manifest["cohort_file"],
+                "source_script_file": file_info(Path(__file__)),
                 "contexts": ["current", "history6"],
                 "representations": ["calendar"] + list(REPRESENTATIONS),
                 "models": list(FAMILIES),

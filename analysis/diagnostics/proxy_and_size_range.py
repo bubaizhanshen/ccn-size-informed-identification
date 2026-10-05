@@ -1,9 +1,11 @@
-"""Current-manuscript proxy-persistence and upper-range comparisons; no document edits."""
+"""Compare direct prediction, concurrent-proxy persistence and size ranges."""
+
+from analysis.common.files import file_info
 
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -25,7 +27,11 @@ def private_env():
 
 
 private_env()
-import argparse, json, math, hashlib, sys, time
+import argparse
+import json
+import math
+import sys
+import time
 import numpy as np
 import pandas as pd
 import sklearn, lightgbm as lgb
@@ -34,10 +40,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import average_precision_score, brier_score_loss
-import shared_temporal as a
-import diagnostic_size_fraction as old
-import primary_cross_site as blocks
-import shared_pnsd_preflight as pre
+from analysis.diagnostics import temporal as a
+from analysis.diagnostics import size_fraction as old
+from analysis.primary import cross_site as blocks
+from analysis.common import pnsd as pre
 
 private_env()
 OUT = ROOT / "results/proxy_and_size_range"
@@ -55,14 +61,6 @@ PARAM = dict(
     deterministic=True,
     force_col_wise=True,
 )
-
-
-def sha(p):
-    h = hashlib.sha256()
-    with Path(p).open("rb") as f:
-        for chunk in iter(lambda: f.read(1048576), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def dump(path, obj):
@@ -206,7 +204,7 @@ def prepare(site, d, dest):
     )
     contract = dict(
         site=site,
-        source_sha256=d["source_hashes"],
+        source_files=d["source_files"],
         source_file="Figshare harmonized SMPS D_* columns",
         input_semantics="dndlog10dp",
         concentration_unit="particles cm-3 per log10 diameter",
@@ -217,10 +215,10 @@ def prepare(site, d, dest):
         native_channel_count=len(diam),
         density_log_base=10,
         native_width_method="log-midpoint-inferred integration cells for density",
-        semantics_evidence="Current manuscript source/archive documentation and original nine-site independent-total audit",
+        semantics_evidence="harmonized archive documentation and nine-site independent-total check",
         timezone="UTC",
-        instrument_metadata_source="Current manuscript Table S1 and Scientific Data 2025 archive metadata",
-        scan_duration="site-specific original Table S1",
+        instrument_metadata_source="harmonized archive metadata",
+        scan_duration="site-specific; see source instrument metadata",
         negative_value_policy="invalidate rows with any negative native density; no clipping",
         missing_value_policy="complete finite native density cells overlapping 15–500 nm; absent cells outside this comparison are not imputed",
         target_scope="15–500 nm; original 24-bin 15–300 nm predictors remain unchanged",
@@ -228,8 +226,8 @@ def prepare(site, d, dest):
     report.update(
         metadata_gate_passed=True,
         representation_contract=contract,
-        input_sources_sha256=d["source_hashes"],
-        snapshot_sha256=sha(ROOT / str(Path(pre.__file__).resolve())),
+        input_source_files=d["source_files"],
+        snapshot_file=file_info(ROOT / str(Path(pre.__file__).resolve())),
     )
     pd.DataFrame(
         dict(
@@ -292,7 +290,7 @@ def prepare(site, d, dest):
             n500_over_native500_q05_median_q95=q.tolist(),
             operation="retain original N15–300 and N82–300; add native log-cell-overlap integral of 300–500 density",
             source_raw_rows=len(f),
-            preflight_sha256=sha(dest / "upper500_preflight.json"),
+            preflight_file=file_info(dest / "upper500_preflight.json"),
         ),
     )
     tailrows = []
@@ -351,6 +349,8 @@ def hourly(site, d, ext, dest):
     checks = []
     stages = []
     upper_support = []
+    reference_path = ROOT / f"results/hourly_leads/{site}_test_predictions.csv.gz"
+    reference = pd.read_csv(reference_path) if reference_path.exists() else None
     for family in ("ridge", "lightgbm"):
         leads = range(1, 25) if family == "ridge" else LGB_LEADS
         nowfit = d["eligible"][0] & np.asarray(ts < cut)
@@ -425,19 +425,17 @@ def hourly(site, d, ext, dest):
                     )
                 )
                 frame.to_csv(dest / f"hourly_{family}_{rep}_{h}h.csv.gz", index=False)
-                if family == "ridge":
-                    archive = (
-                        ROOT
-                        / f"results/ccn_v24_controls_20260928/{site}/minimal_anchor_{h}h_predictions.csv.gz"
-                    )
-                    oldp = pd.read_csv(archive)
+                if family == "ridge" and rep != "N82" and reference is not None:
+                    oldp = reference.loc[reference.lead_h == h]
+                    if oldp.empty:
+                        continue
                     assert np.array_equal(
                         pd.to_datetime(oldp.timestamp, utc=True), ts[test]
                     )
                     delta = float(
                         np.max(
                             np.abs(
-                                oldp["pred_" + rep].to_numpy()
+                                np.log1p(oldp[f"pred_{rep}_ccn_cm3"].to_numpy())
                                 - predictions["direct_full_fit"]
                             )
                         )
@@ -455,7 +453,7 @@ def hourly(site, d, ext, dest):
                             representation=rep,
                             lead_h=h,
                             max_abs_prediction_error=delta,
-                            source_sha256=sha(archive),
+                            source_file=file_info(reference_path),
                         )
                     )
         if not ext["valid"].any():
@@ -899,11 +897,11 @@ def main(site):
         elapsed_seconds=time.time() - start,
         job_id=os.environ.get("SLURM_JOB_ID"),
         array_task=os.environ.get("SLURM_ARRAY_TASK_ID"),
-        source_sha256=d["source_hashes"],
-        mapped_audit_sha256=d["mapped_audit_sha256"],
+        source_files=d["source_files"],
+        mapped_audit_file=d["mapped_audit_file"],
         test_boundary=str(d["cut"]),
-        script_sha256=sha(Path(__file__)),
-        analysis_code_sha256=sha(Path(__file__)),
+        script_file=file_info(Path(__file__)),
+        analysis_code_file=file_info(Path(__file__)),
         software=dict(
             python=sys.version.split()[0],
             numpy=np.__version__,
@@ -912,7 +910,7 @@ def main(site):
             lightgbm=lgb.__version__,
         ),
         model_parameters=PARAM,
-        outputs={p.name: sha(p) for p in dest.iterdir() if p.is_file()},
+        outputs={p.name: file_info(p) for p in dest.iterdir() if p.is_file()},
     )
     dump(dest / "manifest.json", manifest)
     print(site, "COMPLETE", flush=True)
@@ -920,8 +918,9 @@ def main(site):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--site", choices=SITES)
-    p.add_argument("--index", type=int)
+    selection = p.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--site", choices=SITES)
+    selection.add_argument("--index", type=int, choices=range(len(SITES)))
     p.add_argument("--attempt", type=int, default=1)
     args = p.parse_args()
     if args.attempt > 1:

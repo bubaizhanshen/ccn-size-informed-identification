@@ -2,10 +2,10 @@
 
 from pathlib import Path
 import os
-from runtime import ROOT
+from analysis.common.runtime import ROOT
 
 os.umask(63)
-from runtime import WORK
+from analysis.common.runtime import WORK
 
 for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
@@ -20,10 +20,10 @@ from sklearn.linear_model import Ridge, LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import brier_score_loss, average_precision_score
-import diagnostic_size_fraction as previous
-import preprocessing_complete_cohort as builder
-import shared_temporal as temporal
-import model_score as scoring
+from analysis.diagnostics import size_fraction as previous
+from analysis.preprocessing import complete_cohort as builder
+from analysis.diagnostics import temporal as temporal
+from analysis.models import score as scoring
 
 for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
@@ -43,12 +43,12 @@ def main():
         d = {k: z[k] for k in z.files}
     previous.SOURCE = SOURCE
     manifest, audit = previous.check_cohort(site, d)
-    assert {p.name: previous.sha256(p) for p in builder.source_smps(site)} == manifest[
-        "source_csv_sha256"
-    ]
+    assert {
+        p.name: previous.file_info(p) for p in builder.source_smps(site)
+    } == manifest["source_csv_files"]
     assert (
-        previous.sha256(previous.AUDIT_SOURCE / f"{site}_mapped24_audit.json")
-        == manifest["mapped_audit_sha256"]
+        previous.file_info(previous.AUDIT_SOURCE / f"{site}_mapped24_audit.json")
+        == manifest["mapped_audit_file"]
     )
     fit, test = (d["fit"].astype(bool), d["test"].astype(bool))
     bins = d["bins_now"].astype(float)
@@ -148,8 +148,7 @@ def main():
         matched = ROOT / "results/model_benchmark"
         contract = json.loads((matched / "common_cohort_manifest.json").read_text())
         assert (
-            previous.sha256(matched / "common_cohort.npz")
-            == contract["common_cohort_sha256"]
+            previous.file_info(matched / "common_cohort.npz") == contract["cohort_file"]
         )
         with np.load(matched / "common_cohort.npz") as z:
             m = {k: z[k] for k in z.files}
@@ -197,11 +196,11 @@ def main():
                 site=site,
                 alpha10_original_scores_reproduced=True,
                 preprocessing_gate_passed=True,
-                cohort_sha256=previous.sha256(path),
-                mapped_audit_sha256=manifest["mapped_audit_sha256"],
-                script_sha256=previous.sha256(Path(__file__)),
-                output_sha256={
-                    p.name: previous.sha256(p) for p in OUT.glob(f"{site}_*.csv*")
+                cohort_file=previous.file_info(path),
+                mapped_audit_file=manifest["mapped_audit_file"],
+                script_file=previous.file_info(Path(__file__)),
+                output_files={
+                    p.name: previous.file_info(p) for p in OUT.glob(f"{site}_*.csv*")
                 },
             ),
             indent=2,

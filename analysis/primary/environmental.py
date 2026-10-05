@@ -4,11 +4,13 @@ These are opened-archive follow-ups, not independent blind validation.
 """
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 from pathlib import Path
 import os
 import math
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -16,7 +18,7 @@ for key in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[key] = str(WORK)
 for key in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[key] = "1"
-import hashlib
+
 import json
 import numpy as np
 import pandas as pd
@@ -25,9 +27,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, brier_score_loss
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-import preprocessing_complete_cohort as builder
-import shared_temporal as audited
-import diagnostic_size_fraction as spectra
+from analysis.preprocessing import complete_cohort as builder
+from analysis.diagnostics import temporal as audited
+from analysis.diagnostics import size_fraction as spectra
 
 OUT = ROOT / "results/environmental_endpoints"
 PRED = ROOT / "results/hourly_leads"
@@ -37,14 +39,6 @@ LEADS = (1, 3, 6, 12, 24)
 BLOCK_LEADS = (1, 3, 6)
 SEASONS = ("DJF", "MAM", "JJA", "SON")
 SEED = 270928
-
-
-def digest(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def season_of(month: np.ndarray | pd.Series) -> np.ndarray:
@@ -110,7 +104,7 @@ def seasonal_replay() -> tuple[pd.DataFrame, dict[str, str]]:
             raise ValueError(
                 f"{site}: hourly prediction preprocessing provenance failed"
             )
-        sources[site] = digest(path)
+        sources[site] = file_info(path)
         df = pd.read_csv(path)
         df = df.loc[df.lead_h.isin(LEADS)].copy()
         ts = pd.DatetimeIndex(pd.to_datetime(df.timestamp, utc=True))
@@ -232,7 +226,7 @@ def sgp_blocks(d: dict) -> tuple[pd.DataFrame, str]:
         blocks[f"f82_{lead}h"] = fraction
     return (
         blocks,
-        digest(
+        file_info(
             ROOT / "inputs/figshare_27913806/selected/ccn/SGP_ccn_colb_hour_2017.csv"
         ),
     )
@@ -497,10 +491,10 @@ def six_hour_state(
         "outer_test_cut": str(outer),
         "calibration_cut": str(cal_cut),
         "monthly_threshold_fit_common_4of6": True,
-        "source_pnsd_audit_sha256": d["mapped_audit_sha256"],
-        "source_smps_sha256": d["source_hashes"],
-        "target_source_sha256": {
-            path.name: digest(path)
+        "source_pnsd_audit_file": d["mapped_audit_file"],
+        "source_smps_files": d["source_files"],
+        "target_source_files": {
+            path.name: file_info(path)
             for path in sorted(
                 (ROOT / "inputs/figshare_27913806/selected/ccn").glob(
                     "SGP_ccn_colb_hour_*.csv"
@@ -731,7 +725,7 @@ def main() -> None:
     if not PROTOCOL.exists():
         raise FileNotFoundError(PROTOCOL)
     OUT.mkdir(parents=True, exist_ok=True, mode=448)
-    seasonal, source_hashes = seasonal_replay()
+    seasonal, source_files = seasonal_replay()
     d = audited.read_site("SGP", leads=(1, 3, 6))
     blocks, scores, gains, predictions, extras = six_hour_state(d)
     physical, profiles = physical_contrast(d)
@@ -757,8 +751,8 @@ def main() -> None:
     equal_budget.to_csv(OUT / "sgp_equal_budget_state_selection.csv", index=False)
     years.to_csv(OUT / "sgp_state_year_scores.csv", index=False)
     manifest = extras["manifest"] | {
-        "analysis_code_sha256": digest(PROTOCOL),
-        "hourly_prediction_sha256": source_hashes,
+        "analysis_code_file": file_info(PROTOCOL),
+        "hourly_prediction_files": source_files,
         "seasonal_replay_leads": list(LEADS),
         "six_hour_state_leads": list(BLOCK_LEADS),
         "season_support_rule": ">=100 test hours and >=30 test dates",

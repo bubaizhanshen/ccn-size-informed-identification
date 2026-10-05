@@ -2,8 +2,8 @@
 
 import os
 from pathlib import Path
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -15,8 +15,8 @@ import argparse, json, math
 import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, brier_score_loss
-import shared_temporal as audited
-import primary_environmental as orig
+from analysis.diagnostics import temporal as audited
+from analysis.primary import environmental as orig
 
 for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
@@ -128,12 +128,12 @@ def main(site):
     manifest = dict(
         site=site,
         outer_boundary=str(outer),
-        source_hashes=d["source_hashes"],
-        mapped_audit_sha256=d["mapped_audit_sha256"],
+        source_files=d["source_files"],
+        mapped_audit_file=d["mapped_audit_file"],
         conservation=d["conservation"],
         preprocessing_gate_passed=True,
         pretest_common_days=len(dates),
-        analysis_code_sha256=audited.digest(Path(__file__)),
+        analysis_code_file=audited.file_info(Path(__file__)),
     )
     if len(dates) < 10:
         manifest.update(status="insufficient_pretest_dates")
@@ -353,8 +353,8 @@ def main(site):
     b.to_csv(out / "blocks.csv.gz", index=False)
     manifest.update(
         status="complete",
-        script_sha256=audited.digest(Path(__file__)),
-        outputs={p.name: audited.digest(p) for p in out.iterdir() if p.is_file()},
+        script_file=audited.file_info(Path(__file__)),
+        outputs={p.name: audited.file_info(p) for p in out.iterdir() if p.is_file()},
     )
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
 

@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-import shared_archive_features as harmonized
+from analysis.common import archive_features as harmonized
 
 BASE = ["P_SMPS", "T_SMPS", "RH_SMPS", "sin_hour", "cos_hour", "sin_year", "cos_year"]
 SPECTRUM = [

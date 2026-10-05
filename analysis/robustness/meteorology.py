@@ -1,21 +1,24 @@
 """Frozen SGP meteorological controls; original data, matched samples, no future met."""
 
+from analysis.common.files import file_info
+
 import os
 from pathlib import Path
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 WORK.mkdir(parents=True, exist_ok=True)
 for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
 for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[k] = "1"
-import json, hashlib, sys
+import json
+import sys
 import numpy as np
 import pandas as pd
 import xarray as xr
 import sklearn
-import primary_cross_site as ref
+from analysis.primary import cross_site as ref
 
 RAW = ROOT / "inputs/arm_sgpmetE13_b1"
 OLD = ROOT / "results/cross_site/SGP"
@@ -34,15 +37,11 @@ UNITS = ["degC", "%", "kPa", "m/s", "m/s", "degree", "mm"]
 CORE = ["temperature", "rh", "pressure", "windspeed", "u", "v"]
 
 
-def digest(p):
-    return hashlib.sha256(p.read_bytes()).hexdigest()
-
-
 def hourly():
     receipt = {
         "complete": True,
         "files": [
-            {"file": p.name, "sha256": digest(p)}
+            {"file": p.name, "file_info": file_info(p)}
             for p in sorted(RAW.glob("sgpmetE13.b1.*.nc"))
         ],
     }
@@ -70,7 +69,7 @@ def hourly():
     metadata = []
     for i, item in enumerate(receipt["files"]):
         p = RAW / item["file"]
-        assert digest(p) == item["sha256"]
+        assert file_info(p) == item["file_info"]
         with xr.open_dataset(p, decode_times=False) as ds:
             assert int(float(ds.attrs["averaging_interval"].split()[0])) == 60
             assert "end" in ds.attrs["averaging_interval_comment"].lower()
@@ -174,7 +173,7 @@ def hourly():
             n_daily_files=len(receipt["files"]),
             duplicate_minutes_removed=n_duplicate,
             n_unique_minutes=len(minutes),
-            download_manifest_sha256=digest(OUT / "input_manifest.json"),
+            download_manifest_file=file_info(OUT / "input_manifest.json"),
         ),
     )
 
@@ -190,14 +189,14 @@ def main():
     th = b.month.map(thresholds.threshold_cm3.where(thresholds.supported)).to_numpy()
     y = (b.mean_ccn_cm3.to_numpy() >= th).astype(int)
     oldmanifest = json.loads((OLD / "manifest.json").read_text())
-    assert digest(OLD / "blocks.csv.gz") == oldmanifest["outputs"]["blocks.csv.gz"]
+    assert file_info(OLD / "blocks.csv.gz") == oldmanifest["outputs"]["blocks.csv.gz"]
     assert (
-        digest(OLD / "monthly_threshold_support.csv")
+        file_info(OLD / "monthly_threshold_support.csv")
         == oldmanifest["outputs"]["monthly_threshold_support.csv"]
     )
     audited = ref.audited.read_site("SGP")
-    assert audited["source_hashes"] == oldmanifest["source_hashes"]
-    assert audited["mapped_audit_sha256"] == oldmanifest["mapped_audit_sha256"]
+    assert audited["source_files"] == oldmanifest["source_files"]
+    assert audited["mapped_audit_file"] == oldmanifest["mapped_audit_file"]
     for lead in (1, 3, 6):
         good = b[f"origin_valid_{lead}h"].to_numpy(bool)
         ix = audited["ts"].get_indexer(pd.DatetimeIndex(b.loc[good, f"origin_{lead}h"]))
@@ -417,10 +416,10 @@ def main():
         original_predictions_reproduced=True,
         calibration_boundary=str(cut),
         outer_boundary=str(outer),
-        script_sha256=digest(Path(__file__)),
-        analysis_code_sha256=digest(Path(__file__)),
-        original_manifest_sha256=digest(OLD / "manifest.json"),
-        outputs={p.name: digest(p) for p in OUT.iterdir() if p.is_file()},
+        script_file=file_info(Path(__file__)),
+        analysis_code_file=file_info(Path(__file__)),
+        original_manifest_file=file_info(OLD / "manifest.json"),
+        outputs={p.name: file_info(p) for p in OUT.iterdir() if p.is_file()},
     )
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print("COMPLETE", flush=True)

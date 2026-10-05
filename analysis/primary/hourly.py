@@ -10,8 +10,8 @@ quantify support sensitivity. No temporal smoothing or decay law is fitted.
 from __future__ import annotations
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -23,8 +23,8 @@ import argparse
 import json
 import numpy as np
 import pandas as pd
-import shared_temporal as audited
-import diagnostic_size_fraction as previous
+from analysis.diagnostics import temporal as audited
+from analysis.diagnostics import size_fraction as previous
 
 OUT = ROOT / "results/hourly_leads"
 LEADS = tuple(range(1, 25))
@@ -269,8 +269,8 @@ def analyze_site(site: str) -> None:
     manifest = {
         "site": site,
         "leads_h": list(LEADS),
-        "source_csv_sha256": d["source_hashes"],
-        "mapped24_audit_sha256": d["mapped_audit_sha256"],
+        "source_csv_files": d["source_files"],
+        "mapped24_audit_file": d["mapped_audit_file"],
         "mapped_total_over_frozen_q05_median_q95": d["conservation"],
         "preprocessing_gate_passed": True,
         "frozen_test_boundary": str(cut),

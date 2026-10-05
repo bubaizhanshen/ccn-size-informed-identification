@@ -1,9 +1,11 @@
 """Targeted nonlinear met control and fixed-budget CCN selection checks."""
 
+from analysis.common.files import file_info
+
 import os
 from pathlib import Path
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -11,11 +13,12 @@ for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
 for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[k] = "1"
-import json, math, hashlib
+import json
+import math
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-import primary_cross_site as ref
+from analysis.primary import cross_site as ref
 
 for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
@@ -36,10 +39,6 @@ PARAM = dict(
     deterministic=True,
     force_col_wise=True,
 )
-
-
-def sha(p):
-    return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
 def rank(p, q):
@@ -149,13 +148,13 @@ def main():
     mm = json.loads((MET / "manifest.json").read_text())
     om = json.loads((OLD / "manifest.json").read_text())
     for name, value in mm["outputs"].items():
-        assert sha(MET / name) == value, name
+        assert file_info(MET / name) == value, name
     for name in ("blocks.csv.gz", "monthly_threshold_support.csv"):
-        assert sha(OLD / name) == om["outputs"][name]
+        assert file_info(OLD / name) == om["outputs"][name]
     d = ref.audited.read_site("SGP")
     assert (
-        d["source_hashes"] == om["source_hashes"]
-        and d["mapped_audit_sha256"] == om["mapped_audit_sha256"]
+        d["source_files"] == om["source_files"]
+        and d["mapped_audit_file"] == om["mapped_audit_file"]
     )
     b = pd.read_csv(OLD / "blocks.csv.gz")
     for col in ["block_start", "block_end", "origin_1h", "origin_3h", "origin_6h"]:
@@ -184,7 +183,7 @@ def main():
         xs = ref.orig.block_features(b, lead)
         op = pd.read_csv(OLD / f"monthly_lead{lead}_predictions.csv.gz")
         assert (
-            sha(OLD / f"monthly_lead{lead}_predictions.csv.gz")
+            file_info(OLD / f"monthly_lead{lead}_predictions.csv.gz")
             == om["outputs"][f"monthly_lead{lead}_predictions.csv.gz"]
         )
         op = op.rename(
@@ -308,10 +307,10 @@ def main():
         budget_fractions=Q,
         logistic_reproduced=True,
         pnsd_gate_passed=True,
-        source_manifest_sha256=sha(MET / "manifest.json"),
-        script_sha256=sha(Path(__file__)),
-        analysis_code_sha256=sha(Path(__file__)),
-        outputs={p.name: sha(p) for p in OUT.iterdir() if p.is_file()},
+        source_manifest_file=file_info(MET / "manifest.json"),
+        script_file=file_info(Path(__file__)),
+        analysis_code_file=file_info(Path(__file__)),
+        outputs={p.name: file_info(p) for p in OUT.iterdir() if p.is_file()},
     )
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print("COMPLETE", flush=True)

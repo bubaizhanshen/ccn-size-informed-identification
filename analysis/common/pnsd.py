@@ -1,8 +1,10 @@
 """Validate PNSD semantics and perform bin-width-aware grid mapping."""
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 import argparse
-import hashlib
+
 import json
 from pathlib import Path
 import numpy as np
@@ -18,14 +20,6 @@ MEDIAN_TOLERANCE = 0.03
 TAIL_TOLERANCE = 0.05
 TOTAL_TOLERANCE = 0.05
 MIN_MAPPED_VALID_FRACTION = 0.95
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def scalar_value(data: object, key: str) -> object | None:
@@ -535,7 +529,7 @@ def main() -> None:
         native_widths,
     )
     report["input_file"] = args.input.name
-    report["input_sha256"] = file_sha256(args.input)
+    report["input_file"] = file_info(args.input)
     report["embedded_representation_contract"] = embedded
     report["concentration_unit"] = concentration_unit
     report["diameter_definition"] = diameter_definition

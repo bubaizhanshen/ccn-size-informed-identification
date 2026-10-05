@@ -1,7 +1,7 @@
 # Shared loader notice
 
 The size-band integration and SMPS loading functions in
-`analysis/shared_archive_features.py` are derived from the previously
+`analysis/common/archive_features.py` are derived from the previously
 released CCN size-transfer loader. Its existing notice is retained below;
 this notice does not assign a new license to the rest of this repository.
 

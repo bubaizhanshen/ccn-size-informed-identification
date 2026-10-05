@@ -1,10 +1,12 @@
 """Matched LSTM/Transformer high-CCN comparison on audited SGP histories."""
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -14,7 +16,7 @@ for key in ("TF_CPP_MIN_LOG_LEVEL", "TF_ENABLE_ONEDNN_OPTS"):
     os.environ[key] = {"TF_CPP_MIN_LOG_LEVEL": "3", "TF_ENABLE_ONEDNN_OPTS": "0"}[key]
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 import gc
-import hashlib
+
 import json
 import numpy as np
 import pandas as pd
@@ -24,14 +26,6 @@ OUT = ROOT / "results/model_benchmark"
 SEEDS = (270927, 270928)
 REPRESENTATIONS = ("N", "N82", "N_plus_f82", "full24")
 FAMILIES = ("lstm", "transformer")
-
-
-def digest(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 class PositionEmbedding(tf.keras.layers.Layer):
@@ -113,8 +107,8 @@ def main() -> None:
     tf.config.threading.set_inter_op_parallelism_threads(2)
     dataset_path = OUT / "common_cohort.npz"
     manifest = json.loads((OUT / "common_cohort_manifest.json").read_text())
-    if digest(dataset_path) != manifest["common_cohort_sha256"]:
-        raise ValueError("common cohort hash mismatch")
+    if file_info(dataset_path) != manifest["cohort_file"]:
+        raise ValueError("common cohort file changed")
     with np.load(dataset_path, allow_pickle=False) as file:
         d = {key: file[key] for key in file.files}
     train, val, cal, test = (
@@ -135,9 +129,25 @@ def main() -> None:
                 output = runs / f"{label}.csv.gz"
                 if record.exists() and output.exists():
                     result = json.loads(record.read_text())
-                    if result.get("dataset_sha256") != manifest["common_cohort_sha256"]:
+                    if result.get("dataset_file") != manifest["cohort_file"]:
                         raise ValueError(f"stale neural run: {label}")
                     frame = pd.read_csv(output)
+                    for part, mask in (("cal", cal), ("test", test)):
+                        cached = frame.loc[frame.partition == part]
+                        if not (
+                            np.array_equal(
+                                cached.block_start.to_numpy(), d["block_start"][mask]
+                            )
+                            and np.array_equal(
+                                cached.origin.to_numpy(), d["origin"][mask]
+                            )
+                            and np.array_equal(
+                                cached.event.to_numpy(), y[mask].astype(int)
+                            )
+                        ):
+                            raise ValueError(
+                                f"cached neural predictions have different rows or labels: {label}"
+                            )
                 else:
                     model = build_model(kind, x.shape[1], x.shape[2], seed)
                     callback = tf.keras.callbacks.EarlyStopping(
@@ -177,7 +187,7 @@ def main() -> None:
                         "n_test": int(test.sum()),
                         "best_epoch": best,
                         "val_brier": float(np.mean((y[val] - pval) ** 2)),
-                        "dataset_sha256": manifest["common_cohort_sha256"],
+                        "dataset_file": manifest["cohort_file"],
                     }
                     frame = pd.concat(
                         [
@@ -223,8 +233,8 @@ def main() -> None:
     (OUT / "neural_manifest.json").write_text(
         json.dumps(
             {
-                "dataset_sha256": manifest["common_cohort_sha256"],
-                "source_script_sha256": digest(Path(__file__)),
+                "dataset_file": manifest["cohort_file"],
+                "source_script_file": file_info(Path(__file__)),
                 "models": list(FAMILIES),
                 "representations": list(REPRESENTATIONS),
                 "seeds": list(SEEDS),

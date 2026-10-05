@@ -1,9 +1,11 @@
-"""Review-driven same-endpoint controls and transparent SGP block reporting."""
+"""Compare CCN block definitions and predictors on matched samples."""
+
+from analysis.common.files import file_info
 
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -11,25 +13,21 @@ for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
 for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
     os.environ[k] = "1"
-import hashlib
+
 import json
 import math
 import warnings
 import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, brier_score_loss
-import primary_environmental as original
-import shared_temporal as audited
+from analysis.primary import environmental as original
+from analysis.diagnostics import temporal as audited
 
 for k in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[k] = str(WORK)
 OUT = ROOT / "results/block_robustness"
 OLD = original.OUT
 SEED = 270920
-
-
-def sha(path):
-    return original.digest(path)
 
 
 def rank_selection(p):
@@ -83,12 +81,10 @@ def interval(y, p0, p1, ts, seed):
 def main():
     OUT.mkdir(parents=True, exist_ok=True, mode=448)
     if (OUT / "manifest.json").exists():
-        raise FileExistsError(
-            "Completed V20 block outputs already exist; do not overwrite"
-        )
+        raise FileExistsError("Completed block outputs already exist; do not overwrite")
     prior_manifest = json.loads((OLD / "manifest.json").read_text())
-    for name, digest in prior_manifest["target_source_sha256"].items():
-        assert sha(original.builder.SOURCE / "ccn" / name) == digest, name
+    for name, digest in prior_manifest["target_source_files"].items():
+        assert file_info(original.builder.SOURCE / "ccn" / name) == digest, name
     d = audited.read_site("SGP")
     blocks, _ = original.sgp_blocks(d)
     start = pd.DatetimeIndex(blocks.block_start)
@@ -452,15 +448,15 @@ def main():
     manifest = dict(
         status="completed",
         primary_probabilities_reproduced=True,
-        source_manifest_sha256=sha(OLD / "manifest.json"),
-        analysis_code_sha256=sha(Path(__file__)),
-        script_sha256=sha(Path(__file__)),
+        source_manifest_file=file_info(OLD / "manifest.json"),
+        analysis_code_file=file_info(Path(__file__)),
+        script_file=file_info(Path(__file__)),
         cases=list(cases),
         preprocessing_gate_passed=True,
-        source_pnsd_audit_sha256=d["mapped_audit_sha256"],
+        source_pnsd_audit_file=d["mapped_audit_file"],
         split=dict(calibration=str(cal_cut), outer_test=str(outer)),
         review_scope="exploratory follow-up in opened archive; no test-selected settings",
-        output_sha256={p.name: sha(p) for p in sorted(OUT.glob("*.csv*"))},
+        output_files={p.name: file_info(p) for p in sorted(OUT.glob("*.csv*"))},
     )
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2))
 

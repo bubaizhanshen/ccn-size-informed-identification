@@ -1,10 +1,12 @@
 """Score same-cohort high-CCN models on physical information, not leaderboards."""
 
 from __future__ import annotations
+
+from analysis.common.files import file_info
 from pathlib import Path
 import os
-from runtime import ROOT
-from runtime import WORK
+from analysis.common.runtime import ROOT
+from analysis.common.runtime import WORK
 
 os.umask(63)
 WORK.mkdir(parents=True, exist_ok=True, mode=448)
@@ -12,7 +14,7 @@ for key in ("TMPDIR", "TMP", "TEMP", "XDG_CACHE_HOME", "MPLCONFIGDIR"):
     os.environ[key] = str(WORK)
 for key in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[key] = "1"
-import hashlib
+
 import json
 import math
 import numpy as np
@@ -24,14 +26,6 @@ from sklearn.metrics import average_precision_score, brier_score_loss
 OUT = ROOT / "results/model_benchmark"
 SEED = 270929
 REPRESENTATIONS = ("N", "N82", "N_plus_f82", "full24")
-
-
-def digest(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def calibration(
@@ -111,8 +105,8 @@ def paired_intervals(
 def load_groups() -> tuple[dict, dict]:
     dataset = OUT / "common_cohort.npz"
     manifest = json.loads((OUT / "common_cohort_manifest.json").read_text())
-    if digest(dataset) != manifest["common_cohort_sha256"]:
-        raise ValueError("common cohort hash changed")
+    if file_info(dataset) != manifest["cohort_file"]:
+        raise ValueError("common cohort file changed")
     with np.load(dataset, allow_pickle=False) as file:
         d = {key: file[key] for key in file.files}
     expected = {
@@ -305,9 +299,9 @@ def main() -> None:
     pd.DataFrame(strata).to_csv(OUT / "model_season_year_scores.csv", index=False)
     report = {
         "status": "scored",
-        "dataset_sha256": digest(OUT / "common_cohort.npz"),
-        "tabular_sha256": digest(OUT / "tabular_predictions.csv.gz"),
-        "neural_sha256": digest(OUT / "neural_predictions.csv.gz"),
+        "dataset_file": file_info(OUT / "common_cohort.npz"),
+        "tabular_file": file_info(OUT / "tabular_predictions.csv.gz"),
+        "neural_file": file_info(OUT / "neural_predictions.csv.gz"),
         "n_models": int(len(score)),
         "n_paired_comparisons": int(len(comparisons)),
         "n_history_comparisons": int(len(history)),
